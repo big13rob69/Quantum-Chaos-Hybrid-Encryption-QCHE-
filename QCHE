@@ -1,0 +1,99 @@
+import numpy as np
+import hashlib
+import random
+
+
+def logistic_map(seed, r, size):
+    x = seed
+    key_sequence = []
+    for _ in range(size):
+        x = r * x * (1 - x)  # Logistic map equation
+        key_sequence.append(int(x * 256) % 256)  # Convert to byte range
+    return np.array(key_sequence, dtype=np.uint8)
+
+
+def arnold_cat_map(image, iterations=1):
+    """ Applies Arnold’s Cat Map transformation """
+    n = image.shape[0]
+    transformed = np.copy(image)
+    
+    for _ in range(iterations):
+        temp = np.zeros_like(transformed)
+        for x in range(n):
+            for y in range(n):
+                new_x = (x + y) % n
+                new_y = (x + 2 * y) % n
+                temp[new_x, new_y] = transformed[x, y]
+        transformed = temp
+    return transformed
+
+def mutate_key(key, ciphertext):
+    hash_val = hashlib.sha256(ciphertext).digest()
+    return np.bitwise_xor(key, np.frombuffer(hash_val[:len(key)], dtype=np.uint8))
+
+
+def qche_encrypt(plaintext, key_seed, r):
+    """ Encrypts plaintext using Quantum-Chaos Hybrid Encryption """
+    plaintext_bytes = np.frombuffer(plaintext.encode(), dtype=np.uint8)
+    
+    # Generate initial chaotic key
+    key = logistic_map(key_seed, r, len(plaintext_bytes))
+    
+    # Chaotic XOR encryption
+    ciphertext = np.bitwise_xor(plaintext_bytes, key)
+    
+    # Apply Arnold’s Cat Map for diffusion
+    size = int(np.ceil(np.sqrt(len(ciphertext))))  # Make a square matrix
+    padded_cipher = np.pad(ciphertext, (0, size**2 - len(ciphertext)), 'constant')
+    matrix_cipher = padded_cipher.reshape(size, size)
+    scrambled_cipher = arnold_cat_map(matrix_cipher)
+    
+    # Flatten matrix back to 1D
+    final_ciphertext = scrambled_cipher.flatten()[:len(ciphertext)]
+    
+    # Adaptive key mutation
+    new_key = mutate_key(key, final_ciphertext.tobytes())
+    
+    return final_ciphertext.tobytes(), new_key
+
+
+def qche_decrypt(ciphertext, key_seed, r):
+    """ Decrypts ciphertext using Quantum-Chaos Hybrid Encryption """
+    ciphertext_bytes = np.frombuffer(ciphertext, dtype=np.uint8)
+    
+    # Generate initial chaotic key
+    key = logistic_map(key_seed, r, len(ciphertext_bytes))
+    
+    # Reverse Arnold’s Cat Map
+    size = int(np.ceil(np.sqrt(len(ciphertext_bytes))))  # Make square matrix
+    padded_cipher = np.pad(ciphertext_bytes, (0, size**2 - len(ciphertext_bytes)), 'constant')
+    matrix_cipher = padded_cipher.reshape(size, size)
+    
+    # Reverse ACM (Applying ACM 3 times undoes it)
+    unscrambled_cipher = arnold_cat_map(matrix_cipher, iterations=3)
+    
+    # Flatten matrix back
+    final_ciphertext = unscrambled_cipher.flatten()[:len(ciphertext_bytes)]
+    
+    # Reverse Chaotic XOR decryption
+    decrypted = np.bitwise_xor(final_ciphertext, key)
+    
+    return decrypted.tobytes().decode(errors='ignore')
+
+
+# Example usage
+plaintext = "Quantum security is the future!"
+key_seed = random.uniform(0, 1)  # Random initial seed
+r = 3.99  # Chaotic parameter
+
+# Encrypt
+ciphertext, new_key = qche_encrypt(plaintext, key_seed, r)
+print(f"Ciphertext: {ciphertext}")
+
+# Decrypt
+decrypted_text = qche_decrypt(ciphertext, key_seed, r)
+print(f"Decrypted: {decrypted_text}")
+
+
+
+
